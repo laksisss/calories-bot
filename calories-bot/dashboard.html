@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Calories</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  /* ── Токены ─────────────────────────────────────── */
+  :root {
+    --bg:        #0e0e0f;
+    --surface:   #1a1a1c;
+    --border:    #2a2a2e;
+    --accent:    #ff5c3a;
+    --accent2:   #ffaa5c;
+    --text:      #f0ede8;
+    --muted:     #7a7870;
+    --protein:   #5c8fff;
+    --fat:       #ffcc44;
+    --carbs:     #44cc88;
+    --r:         12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    padding-bottom: 32px;
+  }
+
+  /* ── Шапка ──────────────────────────────────────── */
+  .header {
+    padding: 20px 20px 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .header-date {
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .header-cmd {
+    font-size: 12px;
+    color: var(--accent);
+    opacity: .8;
+  }
+
+  /* ── Главная карточка ККАЛ ───────────────────────── */
+  .kcal-hero {
+    margin: 16px 20px 0;
+    background: var(--surface);
+    border-radius: var(--r);
+    padding: 24px 24px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .kcal-hero::before {
+    content: '';
+    position: absolute;
+    top: -40px; right: -40px;
+    width: 160px; height: 160px;
+    background: radial-gradient(circle, rgba(255,92,58,.18) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .kcal-label {
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin-bottom: 6px;
+  }
+  .kcal-value {
+    font-size: 56px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text);
+    letter-spacing: -.02em;
+  }
+  .kcal-value span {
+    font-size: 20px;
+    font-weight: 400;
+    color: var(--muted);
+    margin-left: 4px;
+  }
+  .kcal-meta {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .kcal-meta b { color: var(--accent); }
+
+  /* ── Прогресс-бар цели ───────────────────────────── */
+  .goal-bar-wrap {
+    margin-top: 16px;
+  }
+  .goal-bar-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .goal-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .goal-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 2px;
+    transition: width .6s ease;
+  }
+
+  /* ── БЖУ ─────────────────────────────────────────── */
+  .macros {
+    margin: 12px 20px 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+  .macro-card {
+    background: var(--surface);
+    border-radius: var(--r);
+    padding: 14px 12px;
+    text-align: center;
+  }
+  .macro-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    margin: 0 auto 8px;
+  }
+  .macro-val {
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1;
+  }
+  .macro-unit {
+    font-size: 11px;
+    color: var(--muted);
+    margin-left: 1px;
+  }
+  .macro-name {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+
+  /* ── Неделя ──────────────────────────────────────── */
+  .section {
+    margin: 20px 20px 0;
+  }
+  .section-title {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin-bottom: 12px;
+  }
+
+  .week-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    height: 72px;
+  }
+  .week-bar-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    height: 100%;
+    justify-content: flex-end;
+  }
+  .week-bar {
+    width: 100%;
+    border-radius: 4px 4px 0 0;
+    min-height: 3px;
+    background: var(--border);
+    transition: height .5s ease;
+    position: relative;
+  }
+  .week-bar.today {
+    background: linear-gradient(180deg, var(--accent), var(--accent2));
+  }
+  .week-bar:not(.today) {
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+  .week-day {
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .week-bar.today + .week-day {
+    color: var(--accent);
+  }
+
+  /* ── Лог приёмов ─────────────────────────────────── */
+  .log-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .log-item {
+    background: var(--surface);
+    border-radius: var(--r);
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .log-info { flex: 1; min-width: 0; }
+  .log-name {
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .log-sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .log-kcal {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  .log-kcal span {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--muted);
+  }
+
+  /* ── Пусто / загрузка ────────────────────────────── */
+  .empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .empty-icon { font-size: 36px; margin-bottom: 10px; }
+
+  .loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+    color: var(--muted);
+    font-size: 14px;
+    gap: 8px;
+  }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Кнопка обновить ─────────────────────────────── */
+  .refresh-btn {
+    display: block;
+    margin: 20px auto 0;
+    background: var(--surface);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 10px 24px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: color .2s, border-color .2s;
+  }
+  .refresh-btn:active {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  /* ── Goal input ───────────────────────────────────── */
+  .goal-edit {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .goal-edit input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 14px;
+    padding: 6px 10px;
+    width: 90px;
+    outline: none;
+  }
+  .goal-edit input:focus { border-color: var(--accent); }
+  .goal-edit label { font-size: 12px; color: var(--muted); }
+  .goal-save {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="loading"><div class="spinner"></div> Загружаю...</div>
+</div>
+
+<script>
+// ── Telegram WebApp init ──────────────────────────────────
+const tg = window.Telegram?.WebApp;
+if (tg) {
+  tg.ready();
+  tg.expand();
+  document.body.style.background = '#0e0e0f';
+}
+
+// ── Утилиты ───────────────────────────────────────────────
+const API_BASE = window.location.origin;
+
+const DAYS_RU = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+
+function fmtDate(isoStr) {
+  const d = new Date(isoStr + 'T00:00:00');
+  return DAYS_RU[d.getDay()];
+}
+
+function todayISO() {
+  return new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD
+}
+
+function getGoal() {
+  return parseInt(localStorage.getItem('kcal_goal') || '2000', 10);
+}
+function setGoal(v) {
+  localStorage.setItem('kcal_goal', String(v));
+}
+
+// ── Загрузка данных ───────────────────────────────────────
+async function loadData() {
+  const [todayRes, weekRes, logRes] = await Promise.all([
+    fetch(`${API_BASE}/api/today`).then(r => r.json()),
+    fetch(`${API_BASE}/api/week`).then(r => r.json()),
+    fetch(`${API_BASE}/api/log`).then(r => r.json()).catch(() => [])
+  ]);
+  return { today: todayRes, week: weekRes, log: logRes };
+}
+
+// ── Рендер ────────────────────────────────────────────────
+function render({ today, week, log }) {
+  const goal = getGoal();
+  const pct  = Math.min((today.kcal / goal) * 100, 100).toFixed(1);
+  const iso  = todayISO();
+
+  // ── Неделя: бары ─────────────────────────────────────
+  const maxKcal = Math.max(...week.map(d => d.kcal), 1);
+  const weekBars = week.map(d => {
+    const h = Math.round((d.kcal / maxKcal) * 56) + 4;
+    const isToday = d.date === iso;
+    return `
+      <div class="week-bar-wrap">
+        <div class="week-bar${isToday ? ' today' : ''}" style="height:${h}px"
+             title="${d.kcal} ккал"></div>
+        <div class="week-day">${fmtDate(d.date)}</div>
+      </div>`;
+  }).join('');
+
+  // ── Лог приёмов ──────────────────────────────────────
+  let logHTML = '';
+  if (!log || log.length === 0) {
+    logHTML = `<div class="empty"><div class="empty-icon">🍽</div>Сегодня ещё ничего не добавлено</div>`;
+  } else {
+    logHTML = log.map(item => `
+      <div class="log-item">
+        <div class="log-info">
+          <div class="log-name">${item.name}</div>
+          <div class="log-sub">${item.time} · ${item.weight_g}г · ${item.cooking}</div>
+        </div>
+        <div class="log-kcal">${item.kcal}<span> ккал</span></div>
+      </div>`).join('');
+  }
+
+  document.getElementById('app').innerHTML = `
+
+    <div class="header">
+      <div class="header-date">${new Date().toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}</div>
+      <div class="header-cmd">@calories</div>
+    </div>
+
+    <!-- Главная карточка -->
+    <div class="kcal-hero">
+      <div class="kcal-label">Калории сегодня</div>
+      <div class="kcal-value">${today.kcal}<span>ккал</span></div>
+      <div class="kcal-meta"><b>${today.meals}</b> приём(а) · осталось <b>${Math.max(goal - today.kcal, 0)}</b> ккал</div>
+      <div class="goal-bar-wrap">
+        <div class="goal-bar-labels">
+          <span>0</span><span>Цель: ${goal}</span>
+        </div>
+        <div class="goal-bar">
+          <div class="goal-bar-fill" style="width:${pct}%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- БЖУ -->
+    <div class="macros">
+      <div class="macro-card">
+        <div class="macro-dot" style="background:var(--protein)"></div>
+        <div class="macro-val">${today.protein}<span class="macro-unit">г</span></div>
+        <div class="macro-name">Белки</div>
+      </div>
+      <div class="macro-card">
+        <div class="macro-dot" style="background:var(--fat)"></div>
+        <div class="macro-val">${today.fat}<span class="macro-unit">г</span></div>
+        <div class="macro-name">Жиры</div>
+      </div>
+      <div class="macro-card">
+        <div class="macro-dot" style="background:var(--carbs)"></div>
+        <div class="macro-val">${today.carbs}<span class="macro-unit">г</span></div>
+        <div class="macro-name">Углеводы</div>
+      </div>
+    </div>
+
+    <!-- Неделя -->
+    <div class="section">
+      <div class="section-title">7 дней</div>
+      <div class="week-chart">${weekBars || '<div style="color:var(--muted);font-size:12px">Нет данных</div>'}</div>
+    </div>
+
+    <!-- Цель -->
+    <div class="section">
+      <div class="section-title">Дневная цель</div>
+      <div class="goal-edit">
+        <label>Ккал:</label>
+        <input type="number" id="goal-input" value="${goal}" min="500" max="9999">
+        <button class="goal-save" onclick="saveGoal()">Сохранить</button>
+      </div>
+    </div>
+
+    <!-- Лог сегодня -->
+    <div class="section">
+      <div class="section-title">Приёмы сегодня</div>
+      <div class="log-list">${logHTML}</div>
+    </div>
+
+    <button class="refresh-btn" onclick="init()">↻ Обновить</button>
+  `;
+}
+
+function saveGoal() {
+  const val = parseInt(document.getElementById('goal-input').value, 10);
+  if (val > 100) {
+    setGoal(val);
+    init();
+  }
+}
+
+async function init() {
+  try {
+    const data = await loadData();
+    render(data);
+  } catch (e) {
+    document.getElementById('app').innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">⚠️</div>
+        Не удалось загрузить данные<br>
+        <button class="refresh-btn" style="margin-top:16px" onclick="init()">Попробовать снова</button>
+      </div>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>
