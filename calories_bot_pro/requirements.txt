@@ -1,0 +1,7 @@
+python-telegram-bot==21.6
+anthropic==0.40.0
+sqlalchemy==2.0.36
+aiosqlite==0.20.0
+python-dotenv==1.0.1
+pydantic==2.10.3
+greenlet
