@@ -7,7 +7,7 @@ from config import TELEGRAM_TOKEN
 from database import init_db
 from handlers.start import start_command
 from handlers.meal import handle_text, handle_photo, meal_type_callback, SELECT_MEAL_TYPE
-from handlers.stats import stats_today
+from handlers.stats import stats_today, main_menu_callback
 from handlers.profile import set_goal, show_goal
 
 logging.basicConfig(level=logging.INFO)
@@ -15,17 +15,12 @@ logger = logging.getLogger(__name__)
 
 async def error_handler(update: object, context) -> None:
     logger.error(f"Ошибка: {context.error}", exc_info=context.error)
-    try:
-        if update and hasattr(update, 'effective_message') and update.effective_message:
-            await update.effective_message.reply_text("❌ Ошибка. Попробуй /start")
-    except:
-        pass
 
 async def main():
     await init_db()
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     
-    # Convversation handler для диалога
+    # Conversation handler
     conv_handler = ConversationHandler(
         entry_points=[
             MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text),
@@ -44,6 +39,7 @@ async def main():
     app.add_handler(CommandHandler("profile", show_goal))
     app.add_handler(CallbackQueryHandler(stats_today, pattern="stats_today"))
     app.add_handler(CallbackQueryHandler(show_goal, pattern="show_goal"))
+    app.add_handler(CallbackQueryHandler(main_menu_callback, pattern="main_menu"))
     app.add_error_handler(error_handler)
     
     logger.info("Бот запущен!")
