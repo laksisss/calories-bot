@@ -1,12 +1,12 @@
 from datetime import datetime
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from sqlalchemy import select, func
 from database import async_session
 from models import User, Meal, Goal
 
 MEAL_TYPE_NAMES = {
-    "breakfast": " Завтрак",
+    "breakfast": "🌅 Завтрак",
     "lunch": "🍽 Обед",
     "dinner": "🌙 Ужин",
     "snack": "🍎 Перекус",
@@ -18,7 +18,6 @@ async def stats_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     today = datetime.now().strftime("%Y-%m-%d")
     
     async with async_session() as session:
-        # Получаем пользователя
         result = await session.execute(select(User).where(User.telegram_id == user.id))
         db_user = result.scalar_one_or_none()
         
@@ -30,7 +29,7 @@ async def stats_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(text)
             return
         
-        # Получаем цель (создаем если нет)
+        # Получаем цель
         result = await session.execute(select(Goal).where(Goal.user_id == db_user.id))
         goal = result.scalar_one_or_none()
         
@@ -39,7 +38,7 @@ async def stats_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
             session.add(goal)
             await session.commit()
         
-        # Общая статистика за день
+        # Общая статистика
         result = await session.execute(
             select(func.sum(Meal.calories), func.sum(Meal.protein),
                    func.sum(Meal.fat), func.sum(Meal.carbs))
@@ -80,46 +79,52 @@ async def stats_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += "━━━━━━━━━━━━━━━\n"
             text += "**📋 По приемам пищи:**\n\n"
             
-            # Порядок отображения
             order = ["breakfast", "lunch", "dinner", "snack", None]
             for meal_type in order:
                 for stat in meal_stats:
                     if stat[0] == meal_type:
-                        name = MEAL_TYPE_NAMES.get(meal_type, "❓ Без категории")
+                        name = MEAL_TYPE_NAMES.get(meal_type, "❓")
                         cal = stat[1] or 0
-                        protein = stat[2] or 0
-                        fat = stat[3] or 0
-                        carbs = stat[4] or 0
-                        
-                        # Процент от дневной нормы
-                        cal_percent = int((cal / goal.calories) * 100) if goal.calories else 0
-                        
-                        text += f"{name}: **{cal:.0f}** ккал ({cal_percent}%)\n"
-                        text += f"   Б:{protein:.0f} Ж:{fat:.0f} У:{carbs:.0f}г\n\n"
+                        text += f"{name}: **{cal:.0f}** ккал\n"
+        
+        # Кнопки навигации
+        keyboard = [
+            [InlineKeyboardButton("🔄 Обновить", callback_data="stats_today")],
+            [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+        ]
+        
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                text, 
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
         else:
-            text += "━━━━━━━━━━━━━━━\n"
-            text += "📋 Пока ничего не съедено\n"
-        
-        # Сколько осталось
-        remaining_cal = goal.calories - total_calories
-        remaining_protein = goal.protein - total_protein
-        remaining_fat = goal.fat - total_fat
-        remaining_carbs = goal.carbs - total_carbs
-        
-        text += "━━━━━━━━━━━━━━━\n"
-        text += "**🎯 Осталось до цели:**\n\n"
-        
-        if remaining_cal > 0:
-            text += f" {remaining_cal:.0f} ккал\n"
-            text += f"🥩 {remaining_protein:.0f}г белков\n"
-            text += f"🥑 {remaining_fat:.0f}г жиров\n"
-            text += f"🍞 {remaining_carbs:.0f}г углеводов\n"
-        else:
-            text += "✅ Дневная норма выполнена! 🎉\n"
-            if remaining_cal < 0:
-                text += f"⚠️ Превышение на {abs(remaining_cal):.0f} ккал\n"
-    
+            await update.message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
+
+async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Возврат в главное меню"""
+    user = update.effective_user
+    keyboard = [
+        [InlineKeyboardButton("📊 Статистика за день", callback_data="stats_today")],
+        [InlineKeyboardButton("🎯 Моя цель", callback_data="show_goal")],
+    ]
+    text = (
+        f"👋 Привет, {user.first_name}!\n\n"
+        "Я помогу отслеживать питание.\n\n"
+        "📝 **Как пользоваться:**\n"
+        "• Отправь текст: `курица 200г, рис 150г`\n"
+        "• Выбери прием пищи из кнопок\n"
+        "• Смотри статистику командой /today\n\n"
+        "🆓 10 запросов/день бесплатно"
+    )
     if update.callback_query:
-        await update.callback_query.edit_message_text(text, parse_mode="Markdown")
-    else:
-        await update.message.reply_text(text, parse_mode="Markdown")
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
