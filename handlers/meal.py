@@ -1,7 +1,8 @@
 import base64
+import re
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, ConversationHandler, CallbackQueryHandler
+from telegram.ext import ContextTypes, ConversationHandler
 from sqlalchemy import select
 from database import async_session
 from models import User, Meal
@@ -10,15 +11,25 @@ from ai_service import analyze_text_meal, analyze_photo
 from cache import get_cached_result, set_cached_result, get_image_hash, get_text_hash
 from config import FREE_DAILY_LIMIT
 
-# Состояния для диалога
-SELECT_MEAL_TYPE, WAIT_FOOD = range(2)
+SELECT_MEAL_TYPE = 1
 
 MEAL_TYPES = {
     "breakfast": "🌅 Завтрак",
-    "lunch": "🍽 Обед",
+    "lunch": "🍽 Обед", 
     "dinner": "🌙 Ужин",
     "snack": "🍎 Перекус"
 }
+
+def split_food_items(text: str) -> list:
+    """Разбиваем текст на отдельные продукты"""
+    # Сначала по переносам строк
+    items = [line.strip() for line in text.split('\n') if line.strip()]
+    
+    # Если одна строка - пробуем разбить по запятым
+    if len(items) == 1 and ',' in text:
+        items = [item.strip() for item in text.split(',') if item.strip()]
+    
+    return items
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -40,24 +51,25 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ Лимит 10 запросов/день исчерпан")
             return ConversationHandler.END
         
-        # Разбиваем на строки (несколько продуктов)
-        food_items = [line.strip() for line in text.split('\n') if line.strip()]
+        # Разбиваем на отдельные продукты
+        food_items = split_food_items(text)
         
         if len(food_items) > 1:
-            # Несколько продуктов - показываем кнопки выбора приема пищи
+            # Несколько продуктов - показываем кнопки
             keyboard = [
-                [InlineKeyboardButton(v, callback_data=f"meal_{k}_{text.replace(chr(10), '|')}")]
+                [InlineKeyboardButton(v, callback_data=f"multi_{k}_{text.replace(chr(10), '|').replace(',', ';')}")]
                 for k, v in MEAL_TYPES.items()
             ]
             await update.message.reply_text(
-                f"📝 Найдено продуктов: {len(food_items)}\n\n"
-                "Выбери прием пищи:",
+                f"📝 Найдено продуктов: {len(food_items)}\n\n" +
+                "\n".join(f"• {item}" for item in food_items) +
+                "\n\nВыбери прием пищи:",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             return SELECT_MEAL_TYPE
         
         # Один продукт - обрабатываем сразу
-        await process_single_food(update, session, db_user, today, text, "snack")
+        await process_single_food(update, session, db_user, today, food_items[0], "snack")
         return ConversationHandler.END
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -80,7 +92,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ Лимит исчерпан")
             return
         
-        await update.message.reply_text("📸 Анализирую фото...")
+        msg = await update.message.reply_text("📸 Анализирую фото через ИИ...")
         
         file = await context.bot.get_file(photo.file_id)
         image_bytes = await file.download_as_bytearray()
@@ -88,7 +100,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         meal_data = await analyze_photo(bytes(image_bytes))
         
         if not meal_data:
-            await update.message.reply_text("❌ Не удалось распознать блюдо. Попробуй описать текстом.")
+            await msg.edit_text("❌ Не удалось распознать блюдо. Попробуй описать текстом.")
             return
         
         # Показываем результат и спрашиваем прием пищи
@@ -97,7 +109,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for k, v in MEAL_TYPES.items()
         ]
         
-        await update.message.reply_text(
+        await msg.edit_text(
             f"🍽 {meal_data['name']}\n"
             f"⚖️ {meal_data['weight']}г\n"
             f"🔥 {meal_data['calories']} ккал\n\n"
@@ -121,17 +133,21 @@ async def meal_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         today = datetime.now().strftime("%Y-%m-%d")
         
-        if data[0] == "meal":
-            # Текстовое сообщение с несколькими продуктами
-            text = "_".join(data[2:]).replace("|", "\n")
-            food_items = [line.strip() for line in text.split('\n') if line.strip()]
+        if data[0] == "multi":
+            # Несколько продуктов из текста
+            text = "_".join(data[2:]).replace("|", "\n").replace(";", ",")
+            food_items = split_food_items(text)
             
             total_calories = 0
             results = []
+            errors = []
             
             for food in food_items:
                 meal_data = find_in_local_db(food)
+                
+                # Если не нашли в базе - спрашиваем ИИ
                 if not meal_data:
+                    await query.message.reply_text(f"🤔 Ищу '{food}' в базе...")
                     meal_data = await analyze_text_meal(food)
                 
                 if meal_data:
@@ -144,15 +160,20 @@ async def meal_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     session.add(meal)
                     total_calories += meal_data["calories"]
                     results.append(f"✅ {meal_data['name']} - {meal_data['calories']} ккал")
+                else:
+                    errors.append(f"❌ {food}")
             
             db_user.daily_requests += len(food_items)
             await session.commit()
             
-            await query.edit_message_text(
-                f"📊 Добавлено в {MEAL_TYPES[meal_type].lower()}:\n\n" +
-                "\n".join(results) +
-                f"\n\n🔥 Всего: {total_calories} ккал"
-            )
+            response = f"📊 Добавлено в {MEAL_TYPES[meal_type].lower()}:\n\n"
+            if results:
+                response += "\n".join(results)
+                response += f"\n\n🔥 Всего: {total_calories} ккал"
+            if errors:
+                response += "\n\nНе распознано:\n" + "\n".join(errors)
+            
+            await query.edit_message_text(response)
         
         elif data[0] == "photo":
             # Фото
@@ -186,8 +207,10 @@ async def meal_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def process_single_food(update, session, db_user, today, text, meal_type="snack"):
     """Обработка одного продукта"""
     meal_data = find_in_local_db(text)
+    
+    # Если не нашли в локальной базе - спрашиваем ИИ
     if not meal_data:
-        await update.message.reply_text("🤔 Анализирую...")
+        await update.message.reply_text(f"🤔 Ищу '{text}' через ИИ...")
         cache_key = f"text_{get_text_hash(text)}"
         cached = await get_cached_result(session, cache_key)
         if cached:
@@ -198,7 +221,7 @@ async def process_single_food(update, session, db_user, today, text, meal_type="
                 await set_cached_result(session, cache_key, meal_data)
     
     if not meal_data:
-        await update.message.reply_text("❌ Не удалось распознать")
+        await update.message.reply_text(f"❌ Не удалось распознать '{text}'. Попробуй указать вес иначе.")
         return
     
     meal = Meal(
