@@ -18,13 +18,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📊 Статистика за день", callback_data="stats_today")],
         [InlineKeyboardButton("🎯 Моя цель", callback_data="show_goal")],
-        [InlineKeyboardButton("⚙️ Настройки", callback_data="settings")],
     ]
     await update.message.reply_text(
         f"👋 Привет, {user.first_name}!\n\n"
         "Я помогу отслеживать питание.\n\n"
         "📝 **Как пользоваться:**\n"
         "• Отправь текст: `курица 200г, рис 150г`\n"
+        "• Отправь несколько продуктов через запятую или с новой строки\n"
         "• Выбери прием пищи из кнопок\n"
         "• Смотри статистику командой /today\n\n"
         "🆓 10 запросов/день бесплатно",
