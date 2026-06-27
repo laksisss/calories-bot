@@ -1,92 +1,61 @@
-import anthropic
+from groq import Groq
 import json
-from config import ANTHROPIC_API_KEY, CLAUDE_TEXT_MODEL, CLAUDE_VISION_MODEL
-from utils.validator import validate_meal_data
+from config import GROQ_API_KEY
 
-client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+# Инициализация Groq
+client = Groq(api_key=GROQ_API_KEY)
 
 async def analyze_text_meal(text: str):
-    prompt = f"""Проанализируй описание еды и верни JSON с КБЖУ.
-    
+    """Анализ текста через Groq Llama 3 (бесплатно)"""
+    prompt = f"""Ты эксперт по питанию. Проанализируй описание еды и верни ТОЛЬКО JSON.
+
 Описание: {text}
 
-Верни JSON в формате:
+Верни JSON БЕЗ пояснений:
 {{
     "name": "название блюда",
     "weight": 100,
-    "calories": 250.5,
-    "protein": 15.2,
-    "fat": 8.3,
-    "carbs": 30.1
+    "calories": 250,
+    "protein": 15,
+    "fat": 8,
+    "carbs": 30
 }}
 
-Если указано несколько продуктов, верни массив.
-Вес указывай в граммах. Если вес не указан, оцени примерно.
-"""
-    message = client.messages.create(
-        model=CLAUDE_TEXT_MODEL,
-        max_tokens=1000,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    response_text = message.content[0].text
+Если несколько продуктов - верни массив объектов."""
+    
     try:
-        start = response_text.find('{')
-        end = response_text.rfind('}') + 1
+        response = client.chat.completions.create(
+            model="llama-3.1-70b-versatile",
+            messages=[
+                {"role": "system", "content": "Ты помощник по питанию. Отвечай только JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=500
+        )
+        
+        text_response = response.choices[0].message.content.strip()
+        
+        # Извлекаем JSON
+        if '[' in text_response:
+            start = text_response.find('[')
+            end = text_response.rfind(']') + 1
+        else:
+            start = text_response.find('{')
+            end = text_response.rfind('}') + 1
+        
         if start != -1 and end != 0:
-            json_str = response_text[start:end]
-            data = json.loads(json_str)
-            return validate_meal_data(data)
-    except:
-        pass
+            data = json.loads(text_response[start:end])
+            # Если массив - берем первый элемент
+            if isinstance(data, list):
+                return data[0] if data else None
+            return data
+    except Exception as e:
+        print(f"Groq error: {e}")
+    
     return None
 
-async def analyze_photo(image_base64: str, media_type: str = "image/jpeg"):
-    prompt = """Проанализируй фото еды и определи:
-1. Название блюда
-2. Примерный вес порции в граммах
-3. КБЖУ на всю порцию
-
-Верни JSON в формате:
-{
-    "name": "название блюда",
-    "weight": 250,
-    "calories": 450.5,
-    "protein": 25.2,
-    "fat": 18.3,
-    "carbs": 45.1
-}
-
-Если на фото несколько блюд, верни массив.
-"""
-    message = client.messages.create(
-        model=CLAUDE_VISION_MODEL,
-        max_tokens=1000,
-        messages=[{
-            "role": "user",
-            "content": [
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": media_type,
-                        "data": image_base64
-                    }
-                },
-                {
-                    "type": "text",
-                    "text": prompt
-                }
-            ]
-        }]
-    )
-    response_text = message.content[0].text
-    try:
-        start = response_text.find('{')
-        end = response_text.rfind('}') + 1
-        if start != -1 and end != 0:
-            json_str = response_text[start:end]
-            data = json.loads(json_str)
-            return validate_meal_data(data)
-    except:
-        pass
+async def analyze_photo(image_bytes: bytes):
+    """Заглушка для фото - пока не поддерживается"""
+    print("Анализ фото временно недоступен")
     return None
