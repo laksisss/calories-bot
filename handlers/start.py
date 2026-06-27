@@ -12,24 +12,22 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not db_user:
             db_user = User(telegram_id=user.id, username=user.username, first_name=user.first_name)
             session.add(db_user)
-            goal = Goal(user_id=user.id)
-            session.add(goal)
+            session.add(Goal(user_id=user.id))
             await session.commit()
     
     keyboard = [
-        [InlineKeyboardButton("📊 Статистика", callback_data="stats_today")],
-        [InlineKeyboardButton("🎯 Цель", callback_data="show_goal")],
-        [InlineKeyboardButton("🏆 Достижения", callback_data="achievements")],
+        [InlineKeyboardButton("📊 Статистика за день", callback_data="stats_today")],
+        [InlineKeyboardButton("🎯 Моя цель", callback_data="show_goal")],
+        [InlineKeyboardButton("⚙️ Настройки", callback_data="settings")],
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
     await update.message.reply_text(
         f"👋 Привет, {user.first_name}!\n\n"
-        "Я помогу тебе отслеживать питание.\n\n"
-        "📝 Отправь мне:\n"
-        "• Текст: 'рис 200г, курица 150г'\n"
-        "• Фото блюда\n\n"
-        "🆓 Бесплатно: 10 запросов в день\n"
-        "💎 PRO: безлимит",
-        reply_markup=reply_markup
+        "Я помогу отслеживать питание.\n\n"
+        "📝 **Как пользоваться:**\n"
+        "• Отправь текст: `курица 200г, рис 150г`\n"
+        "• Выбери прием пищи из кнопок\n"
+        "• Смотри статистику командой /today\n\n"
+        "🆓 10 запросов/день бесплатно",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
     )
